@@ -4,14 +4,21 @@
 * @author OpenCV team
 */
 
+#include <stdio.h>
+#include <iostream>
+#include "opencv2/core.hpp"
+#include "opencv2/features2d.hpp"
+#include "opencv2/highgui.hpp"
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui.hpp"
 #include "opencv2/opencv.hpp"
 #include <iostream>
-#include <sstream>
+#include "opencv2\world.hpp"
+#include "opencv2\xfeatures2d.hpp"
 
 using namespace cv;
 using namespace std;
+using namespace cv::xfeatures2d;
 
 /// helper functions
 void do_main();
@@ -32,93 +39,117 @@ int main(int argc, char** argv)
 
 	// allow operator to view cout until key is pressed
 	cout << endl << endl << "Ending Program, press any key to close...";
- 	waitKey();
+	waitKey();
 
 	return 0;
 }
 
-void do_main() {
-	ostringstream filename1, filename2;
-	Mat img;
-	namedWindow("Bird", WINDOW_GUI_EXPANDED);
-	namedWindow("Laplacian Bird", WINDOW_GUI_EXPANDED);
-	namedWindow("Sobel Bird", WINDOW_GUI_EXPANDED);
-	namedWindow("Canny Bird", WINDOW_GUI_EXPANDED);
+ostringstream filename1, filename2;
+// Mat img[4];
+string windows[10] = {
+	"Base Image", // window 0
+	"Affine Transformed Image", // window 1
+	"Keypoint Detailed Image", // window 2
+	"Keypoint Detailed Transformed Image", // window 3
+	"Ground Truth", // window 4
+	"Descriptor Map", // window 5
+	// "w5", // window 5 
+	"w6", // window 6
+	"w7", // window 7
+	"w8", // window 8
+	"w9" // window 9
+};
 
-	namedWindow("Laplacian Bird Distance", WINDOW_GUI_EXPANDED);
-	namedWindow("Sobel Bird Distance", WINDOW_GUI_EXPANDED);
-	namedWindow("Canny Bird Distance", WINDOW_GUI_EXPANDED);
+void do_main() {
+
+	/*for (int i = 0; i < 10; i++) {
+		namedWindow(windows[i], WINDOW_AUTOSIZE);
+	}*/
 
 	// Load image
-	img = imread("Bird.jpg", 0);
-	Mat save = img;
-
-	// must get frame into correct data type
-	//Mat float_bird;
-	//img.convertTo(float_bird, CV_32F, 1.0/255.0, 0.0);
-	// normalize(float_frame, float_frame, 1, NORM_MINMAX);
+	Mat im0 = imread("im0.png", IMREAD_GRAYSCALE);
+	Mat im1 = imread("im1.png", IMREAD_GRAYSCALE);
+	Mat fast, ffreak, trans, save = im0;
+	Mat im0k = im0, im1k = im1;
 
 	// Display incoming Image
-	imshow("Bird", img);
-	cout << "Hello!" << endl << "Here is a nice picture of a Bird..." << endl << "Press any key to continue... " << endl << endl;
+	namedWindow(windows[0], WINDOW_NORMAL);
+	imshow(windows[0], im0);
+	cout << "Hello!" << endl << "Here is a nice picture of a Bike..." << endl << "Press any key to continue... " << endl << endl;
 	waitKey();
 
-	// laplacian
-	Mat laBird;
-	// using aparture of 3 to get something out... any less just saturates because it produces no zeros...
-	Laplacian(img, laBird, img.depth(), 5);
-	imshow("Laplacian Bird", laBird);
-	imwrite("laBird.jpg", laBird);
-
-	cout << "Here is a Laplacian bird!" << endl << "Press any key to Continue... " << endl << endl;
+	// display stereo counterpart
+	namedWindow(windows[1], WINDOW_NORMAL);
+	imshow(windows[1], im1);
+	cout << "Here is annother perspective" << endl << "Press any key to Continue... " << endl << endl;
 	waitKey();
 
-	// sobel, lets try 2nd order... get a usefull map by basically making it a laplacian...
-	Mat soBird;
-	Sobel(img, soBird, img.depth(), 1, 1, 5,3);
-	imshow("Sobel Bird", soBird);
-	imwrite("soBird.jpg", soBird);
+	// Keypoint analysis
+	Ptr<SIFT> detector = SIFT::create();
+	std::vector<KeyPoint> keypoints1, keypoints2;
 
-	cout << "Here is a Sobel bird!" << endl << "Press any key to Continue... " << endl << endl;
+	// do detection
+	detector->detect(im0, keypoints1); // left image
+	detector->detect(im1, keypoints2); // right image
+										  
+	// --  Draw keypoints
+	Mat   img_keypoints_1;
+	Mat   img_keypoints_2;
+	drawKeypoints(im0, keypoints1, im0k,Scalar::all(-1),DrawMatchesFlags::DEFAULT);
+	drawKeypoints(im1, keypoints2, im1k,Scalar::all(-1),DrawMatchesFlags::DEFAULT);
+
+	// --  Show detected (drawn) keypoints
+	imshow(windows[2],im0k);
+	imshow(windows[3],im1k);
+
 	waitKey();
+	
+	//// sobel, lets try 2nd order... get a usefull map by basically making it a laplacian...
+	//Mat soBird;
+	//Sobel(img, soBird, img.depth(), 1, 1, 5,3);
+	//imshow("Sobel Bird", soBird);
+	//imwrite("soBird.jpg", soBird);
 
-	// canny, lets try 1st order...
-	Mat cannyBird;
-	Canny(img, cannyBird, 50, 100);
-	imshow("Canny Bird", cannyBird);
-	imwrite("cannyBird.jpg", cannyBird);
+	//cout << "Here is a Sobel bird!" << endl << "Press any key to Continue... " << endl << endl;
+	//waitKey();
 
-	cout << "Here is a Canny bird!" << endl << "Press any key to Continue... " << endl << endl;
-	waitKey();
+	//// canny, lets try 1st order...
+	//Mat cannyBird;
+	//Canny(img, cannyBird, 50, 100);
+	//imshow("Canny Bird", cannyBird);
+	//imwrite("cannyBird.jpg", cannyBird);
 
-	cout << "Now here are the distance transforms of each..." << endl;
+	//cout << "Here is a Canny bird!" << endl << "Press any key to Continue... " << endl << endl;
+	//waitKey();
 
-	// invert the values
-	laBird = UINT8_MAX - laBird;
-	// convert so that we dont trip the assert in distanceTransform
-	laBird.convertTo(laBird, CV_8UC1);
-	distanceTransform(laBird, laBird, DIST_L1, 3);
-	normalize(laBird, laBird, 0, 1, NORM_MINMAX);
-	// disp
-	imshow("Laplacian Bird Distance", laBird);
-	imwrite("dTlaBird.jpg", laBird*255);
-	waitKey();
+	//cout << "Now here are the distance transforms of each..." << endl;
 
-	// invert
-	soBird = UINT8_MAX - soBird;
-	// convert
-	soBird.convertTo(soBird, CV_8UC1);
-	distanceTransform(soBird, soBird, DIST_L1, 3);
-	normalize(soBird, soBird, 0, 1, NORM_MINMAX);
-	// disp
-	imshow("Sobel Bird Distance", soBird);
-	imwrite("dTsoBird.jpg", soBird*255);
-	waitKey();
+	//// invert the values
+	//laBird = UINT8_MAX - laBird;
+	//// convert so that we dont trip the assert in distanceTransform
+	//laBird.convertTo(laBird, CV_8UC1);
+	//distanceTransform(laBird, laBird, DIST_L1, 3);
+	//normalize(laBird, laBird, 0, 1, NORM_MINMAX);
+	//// disp
+	//imshow("Laplacian Bird Distance", laBird);
+	//imwrite("dTlaBird.jpg", laBird*255);
+	//waitKey();
 
-	cannyBird = UINT8_MAX - cannyBird;
-	distanceTransform(cannyBird, cannyBird, DIST_L1, 3);
-	normalize(cannyBird, cannyBird, 0, 1, NORM_MINMAX);
-	imshow("Canny Bird Distance", cannyBird);
-	imwrite("dTcannyBird.jpg", cannyBird*255);
-	waitKey();
+	//// invert
+	//soBird = UINT8_MAX - soBird;
+	//// convert
+	//soBird.convertTo(soBird, CV_8UC1);
+	//distanceTransform(soBird, soBird, DIST_L1, 3);
+	//normalize(soBird, soBird, 0, 1, NORM_MINMAX);
+	//// disp
+	//imshow("Sobel Bird Distance", soBird);
+	//imwrite("dTsoBird.jpg", soBird*255);
+	//waitKey();
+
+	//cannyBird = UINT8_MAX - cannyBird;
+	//distanceTransform(cannyBird, cannyBird, DIST_L1, 3);
+	//normalize(cannyBird, cannyBird, 0, 1, NORM_MINMAX);
+	//imshow("Canny Bird Distance", cannyBird);
+	//imwrite("dTcannyBird.jpg", cannyBird*255);
+	//waitKey();
 }
