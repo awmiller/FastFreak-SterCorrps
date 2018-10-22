@@ -1,0 +1,4 @@
+Oh no! An exception occurred:
+OpenCV(3.4.3-dev) c:\opencv\install\include\opencv2\core\mat.inl.hpp:1202: error: (-215:Assertion failed) ((((sizeof(size_t)<<28)|0x8442211) >> ((traits::Depth<_Tp>::value) & ((1 << 3) - 1))*4) & 15) == elemSize1() in function 'cv::Mat::at'
+
+
