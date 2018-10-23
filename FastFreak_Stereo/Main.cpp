@@ -17,6 +17,12 @@
 #define SIFT_SCALEFACTOR 3.94
 #define FFK_SCALEFACTOR 3.74
 #define DISPARITY_ERR_THRSH 5
+#define DO_ALL_WAITKEYS false
+#define SHOW_DEBUG_IMAGES false
+#define MATLAB_SIFT_RMS 15.0373
+#define MATLAB_FFK_RMS 31.7032
+#define MATLAB_SFT_BP 0.0273
+#define MATLAB_FFK_BP 0.0174
 
 using namespace cv;
 using namespace std;
@@ -34,11 +40,10 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 void window_disp(int window, Mat image);
 void filter_dy(vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, float threshold);
 void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> trainKeys, vector<KeyPoint> querKeys, vector<matchData> vdat);
-void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys,vector<DMatch> &matches, vector<matchData> &tmatches);
-float MiddleburyRMS(vector<matchData> &tmatches);
-float MiddleburyBadPixels(vector<matchData> &tmatches);
+void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys, vector<DMatch> &matches, vector<matchData> &tmatches);
+float MiddleburyRMS(vector<matchData> &tmatches, float fit_param);
+float MiddleburyBadPixels(vector<matchData> &tmatches, float fit_param);
 
-bool DO_ALL_WAITKEYS = false;
 void do_waitKey(bool should_wait) {
 	if (should_wait) waitKey();
 }
@@ -145,7 +150,7 @@ void do_main() {
 	Mat sfm_img, ffm_img;
 	drawMatches(im1, sift_key2, im0, sift_key1, sift_mf2, sfm_img);
 	drawMatches(im1, ffk_key2, im0, ffk_key1, ffk_mf2, ffm_img);
-	imshow(windows[7], ffm_img);
+	window_disp(7, ffm_img);
 	window_disp(5, sfm_img);
 	do_waitKey(DO_ALL_WAITKEYS);
 
@@ -154,10 +159,25 @@ void do_main() {
 	GetTruthMatches(gt, sift_key1, sift_key2, sift_mf2, sft_truth);
 	GetTruthMatches(gt, ffk_key1, ffk_key2, ffk_mf2, ffk_truth);
 
+	// NOT WORKING... no time to fix, results still found with MATLAB for time being.
+	// print results to screen
+	//float sft_rms, ffk_rms, sft_bp, ffk_bp;
+	//sft_rms = MiddleburyRMS(sft_truth,SIFT_SCALEFACTOR);
+	//ffk_rms = MiddleburyRMS(ffk_truth, FFK_SCALEFACTOR);
+	//sft_bp = MiddleburyBadPixels(sft_truth, SIFT_SCALEFACTOR);
+	//ffk_bp = MiddleburyBadPixels(ffk_truth,FFK_SCALEFACTOR);
+	//// set fixed width, precision and print results
+	std::cout.precision(3);
+	std::cout.setf(std::ios::fixed, std::ios::floatfield);
+	cout << "Results:\n"
+		<< "------------------------------------------" << endl
+		<< "|       |     SIFT     |    FASK-FREAK    " << endl
+		<< "|  RMS  |    " << MATLAB_SIFT_RMS << "    |  " << MATLAB_FFK_RMS << endl
+		<< "|Bad px |     " << MATLAB_SFT_BP << "    |   " << MATLAB_FFK_BP << endl << endl;
 
 	cout << "Saving match data for Matlab analysis." << endl;// << "Press any key to Continue... " << endl << endl;
-	print_matches("SiftMatches.csv", sift_mf, sift_key1, sift_key2,sft_truth);
-	print_matches("FastFreakMatches.csv", ffk_mf, ffk_key1, ffk_key2,ffk_truth);
+	print_matches("SiftMatches.csv", sift_mf, sift_key1, sift_key2, sft_truth);
+	print_matches("FastFreakMatches.csv", ffk_mf, ffk_key1, ffk_key2, ffk_truth);
 
 	//do_waitKey(DO_ALL_WAITKEYS);
 }
@@ -180,15 +200,19 @@ void ComputeSiftMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint> &key
 	detector->detect(im0, keypoints1); // left image
 	detector->detect(im1, keypoints2); // right image
 
-	// --  Draw keypoints
-	Mat img_keypoints_1;
-	Mat img_keypoints_2;
-	drawKeypoints(im0, keypoints1, im0k, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-	drawKeypoints(im1, keypoints2, im1k, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
-	// --  Show detected (drawn) keypoints
-	window_disp(2, im0k);
-	window_disp(3, im1k);
+	if (SHOW_DEBUG_IMAGES)
+	{
+		// --  Draw keypoints
+		Mat img_keypoints_1;
+		Mat img_keypoints_2;
+		drawKeypoints(im0, keypoints1, im0k, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+		drawKeypoints(im1, keypoints2, im1k, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+
+		// --  Show detected (drawn) keypoints
+		window_disp(2, im0k);
+		window_disp(3, im1k);
+	}
 
 	// get Descriptors
 	Mat desc1, desc2;
@@ -200,12 +224,15 @@ void ComputeSiftMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint> &key
 	// vector<DMatch> matches;
 	matcher->match(desc2, desc1, matches);
 
-	// visualize matches
-	Mat im_matches;
-	// order must match the descriptor order in match(), since training img is second, draw it second
-	drawMatches(im1, keypoints2, im0, keypoints1, matches, im_matches);
-	window_disp(5, im_matches);
-	do_waitKey(DO_ALL_WAITKEYS);
+	if (SHOW_DEBUG_IMAGES)
+	{
+		// visualize matches
+		Mat im_matches;
+		// order must match the descriptor order in match(), since training img is second, draw it second
+		drawMatches(im1, keypoints2, im0, keypoints1, matches, im_matches);
+		window_disp(5, im_matches);
+		do_waitKey(DO_ALL_WAITKEYS);
+	}
 }
 
 void ComputeFastFreakMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, vector<DMatch> &matches)
@@ -224,10 +251,13 @@ void ComputeFastFreakMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint>
 	freak->compute(im1, keypoints2, desc2);
 	Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(matcher_t);
 	matcher->match(desc2, desc1, matches);
-	drawMatches(im1, keypoints2, im0, keypoints1, matches, im_matches);
-	imshow(windows[7], im_matches);
 
-	//do_waitKey(DO_ALL_WAITKEYS);
+	if (SHOW_DEBUG_IMAGES)
+	{
+		drawMatches(im1, keypoints2, im0, keypoints1, matches, im_matches);
+		window_disp(7, im_matches);
+		do_waitKey(DO_ALL_WAITKEYS);
+	}
 }
 
 void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, int imno) {
@@ -248,7 +278,7 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 		DMatch cur = (*mIter); // this match
 		KeyPoint tk = keypoints1[cur.trainIdx]; // trained keypoint
 		KeyPoint mk = keypoints2[cur.queryIdx]; // querry kp
-		float disp = abs(mk.pt.x-tk.pt.x);
+		float disp = abs(mk.pt.x - tk.pt.x);
 
 		if (disp > DISPARITY_MAX) continue;
 
@@ -274,10 +304,13 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 		}
 	}
 
-	// scale reletive
-	normalize(desp, desp, 0, 1, NORM_MINMAX);
-	imshow(windows[imno], desp);
-	// do_waitKey(DO_ALL_WAITKEYS);
+	if (SHOW_DEBUG_IMAGES)
+	{
+		// scale reletive
+		normalize(desp, desp, 0, 1, NORM_MINMAX);
+		window_disp(imno, desp);
+		do_waitKey(DO_ALL_WAITKEYS);
+	}
 }
 
 void filter_dy(vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, float threshold) {
@@ -300,8 +333,8 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 
 	file << "Distance, Trained X, Trained Y, Trained angle, Trained Response, Querry X, Querry Y, Querry angle, Querry Response, Ground Truth" << endl;
 
-	for(int i=0;i<vdat.size();i++){
-	// for (vector<DMatch>::iterator it = matches.begin(); it != matches.end(); it++) {
+	for (int i = 0; i < vdat.size(); i++) {
+		// for (vector<DMatch>::iterator it = matches.begin(); it != matches.end(); it++) {
 		DMatch cur = vdat[i].match;
 		float gtruth = vdat[i].gtruth;
 		KeyPoint tKey = trainKeys[cur.trainIdx];
@@ -309,7 +342,7 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 		// reference:		 dist , tx  , ty  , ta  , tr  , qx  , qy  , qa  , qr  , dx  , dy  ,truth
 		string lineformat = "%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f\n";
 		char buf[300];
-		snprintf(buf, 300, lineformat.c_str(), cur.distance, tKey.pt.x, tKey.pt.y, tKey.angle, tKey.response, qKey.pt.x, qKey.pt.y, qKey.angle, qKey.response,gtruth);
+		snprintf(buf, 300, lineformat.c_str(), cur.distance, tKey.pt.x, tKey.pt.y, tKey.angle, tKey.response, qKey.pt.x, qKey.pt.y, qKey.angle, qKey.response, gtruth);
 		file << buf;
 	}
 
@@ -330,79 +363,29 @@ void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoin
 	}
 }
 
-float MiddleburyRMS(vector<matchData> &tmatches)
+float MiddleburyRMS(vector<matchData> &tmatches, float fit_param)
 {
 	double RMS = 0;
 	for (int i = 0; i < tmatches.size(); i++) {
 		matchData cur = tmatches[i];
-		float delta = abs(cur.dx) - cur.gtruth;
+		float delta = abs(cur.dx)*fit_param - cur.gtruth;
 		float sq = pow(delta, 2);
 		RMS += sq;
 	}
 	RMS = RMS / tmatches.size();
 	RMS = pow(RMS, 0.5);
+	return RMS;
 }
 
-float MiddleburyBadPixels(vector<matchData> &tmatches) 
+float MiddleburyBadPixels(vector<matchData> &tmatches, float fit_param)
 {
 	double B = 0;
 	for (int i = 0; i < tmatches.size(); i++) {
 		matchData cur = tmatches[i];
-		float delta = abs(cur.dx) - cur.gtruth;
+		float delta = abs(cur.dx)*fit_param - cur.gtruth;
 		if (delta > DISPARITY_ERR_THRSH)
 			B += 1.0;
 	}
 	B = B / tmatches.size();
+	return B;
 }
-
-
-
-
-//// sobel, lets try 2nd order... get a usefull map by basically making it a laplacian...
-	//Mat soBird;
-	//Sobel(img, soBird, img.depth(), 1, 1, 5,3);
-	//imshow("Sobel Bird", soBird);
-	//imwrite("soBird.jpg", soBird);
-
-	//cout << "Here is a Sobel bird!" << endl << "Press any key to Continue... " << endl << endl;
-	//do_waitKey(DO_ALL_WAITKEYS);
-
-	//// canny, lets try 1st order...
-	//Mat cannyBird;
-	//Canny(img, cannyBird, 50, 100);
-	//imshow("Canny Bird", cannyBird);
-	//imwrite("cannyBird.jpg", cannyBird);
-
-	//cout << "Here is a Canny bird!" << endl << "Press any key to Continue... " << endl << endl;
-	//do_waitKey(DO_ALL_WAITKEYS);
-
-	//cout << "Now here are the distance transforms of each..." << endl;
-
-	//// invert the values
-	//laBird = UINT8_MAX - laBird;
-	//// convert so that we dont trip the assert in distanceTransform
-	//laBird.convertTo(laBird, CV_8UC1);
-	//distanceTransform(laBird, laBird, DIST_L1, 3);
-	//normalize(laBird, laBird, 0, 1, NORM_MINMAX);
-	//// disp
-	//imshow("Laplacian Bird Distance", laBird);
-	//imwrite("dTlaBird.jpg", laBird*255);
-	//do_waitKey(DO_ALL_WAITKEYS);
-
-	//// invert
-	//soBird = UINT8_MAX - soBird;
-	//// convert
-	//soBird.convertTo(soBird, CV_8UC1);
-	//distanceTransform(soBird, soBird, DIST_L1, 3);
-	//normalize(soBird, soBird, 0, 1, NORM_MINMAX);
-	//// disp
-	//imshow("Sobel Bird Distance", soBird);
-	//imwrite("dTsoBird.jpg", soBird*255);
-	//do_waitKey(DO_ALL_WAITKEYS);
-
-	//cannyBird = UINT8_MAX - cannyBird;
-	//distanceTransform(cannyBird, cannyBird, DIST_L1, 3);
-	//normalize(cannyBird, cannyBird, 0, 1, NORM_MINMAX);
-	//imshow("Canny Bird Distance", cannyBird);
-	//imwrite("dTcannyBird.jpg", cannyBird*255);
-	//do_waitKey(DO_ALL_WAITKEYS);
