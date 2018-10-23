@@ -276,16 +276,25 @@ void do_main() {
 	GetMatchData(gt, ffk_key1, ffk_key2, ffk_mf2, ffk_truth);
 
 	// NOT WORKING... no time to fix, results still found with MATLAB for time being.
+	// 10/23 2:28pm -- "bad pixels" matches matlab result but RMS is still order mag larger
 	// print results to screen
-	//float sft_rms, ffk_rms, sft_bp, ffk_bp;
-	//sft_rms = MiddleburyRMS(sft_truth,SIFT_SCALEFACTOR);
-	//ffk_rms = MiddleburyRMS(ffk_truth, FFK_SCALEFACTOR);
-	//sft_bp = MiddleburyBadPixels(sft_truth, SIFT_SCALEFACTOR);
-	//ffk_bp = MiddleburyBadPixels(ffk_truth,FFK_SCALEFACTOR);
-	//// set fixed width, precision and print results
+	float sft_rms, ffk_rms, sft_bp, ffk_bp;
+	sft_rms = MiddleburyRMS(sft_truth, SIFT_SCALEFACTOR);
+	ffk_rms = MiddleburyRMS(ffk_truth, FFK_SCALEFACTOR);
+	sft_bp = MiddleburyBadPixels(sft_truth, DISPARITY_ERR_THRSH, SIFT_SCALEFACTOR);
+	ffk_bp = MiddleburyBadPixels(ffk_truth, DISPARITY_ERR_THRSH, FFK_SCALEFACTOR);
+	// set fixed width, precision and print results
 	std::cout.precision(3);
 	std::cout.setf(std::ios::fixed, std::ios::floatfield);
-	cout << "Results:\n"
+	cout << "C++ Results:\n"
+		<< "------------------------------------------" << endl
+		<< "|       |     SIFT     |    FASK-FREAK    " << endl
+		<< "|  RMS  |    " << sft_rms << "    |  " << ffk_rms  << endl
+		<< "|Bad px |     " << sft_bp << "    |   " << ffk_bp << endl << endl;
+
+	std::cout.precision(3);
+	std::cout.setf(std::ios::fixed, std::ios::floatfield);
+	cout << "MATLAB Results:\n"
 		<< "------------------------------------------" << endl
 		<< "|       |     SIFT     |    FASK-FREAK    " << endl
 		<< "|  RMS  |    " << MATLAB_SIFT_RMS << "    |  " << MATLAB_FFK_RMS << endl
@@ -365,7 +374,7 @@ void ComputeFastFreakMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint>
 	Ptr<FREAK> freak = FREAK::create();
 	freak->compute(im0, keypoints1, desc1);
 	freak->compute(im1, keypoints2, desc2);
-	
+
 	// use a hamming matcher as per OpenCV community reccommendation
 	Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(matcher_t);
 	matcher->match(desc2, desc1, matches);
@@ -378,7 +387,7 @@ void ComputeFastFreakMatches(Mat &im0, Mat &im1, int matcher_t, vector<KeyPoint>
 	}
 }
 
-void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, int imno) 
+void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, int imno)
 {
 	// initialze desparity map, primarily for visualization
 	Mat desp = Mat::ones(im0.rows, im0.cols, CV_32FC1) * -1; // -1 garauntees detection of unused pixel
@@ -391,7 +400,7 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 		DMatch cur = (*mIter); // this match
 		KeyPoint tk = keypoints1[cur.trainIdx]; // trained keypoint
 		KeyPoint mk = keypoints2[cur.queryIdx]; // querry kp
-		
+
 		// stereo disparity defined in taxonomy paper
 		float disp = abs(mk.pt.x - tk.pt.x);
 
@@ -430,17 +439,17 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 	}
 }
 
-void filter_dy(vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, float threshold) 
+void filter_dy(vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, float threshold)
 {
 	// iterate over all the matches
 	for (vector<DMatch>::iterator it = matches.begin(); it != matches.end(); it++) {
 		DMatch cur = (*it); // dereference
 		KeyPoint key1 = keypoints1[cur.trainIdx]; // trained keypoint
 		KeyPoint key2 = keypoints2[cur.queryIdx]; // querry keypoint
-		
+
 		// calculate delta
 		float dy = abs(key1.pt.y - key2.pt.y);
-		
+
 		// only add it to output if its less than threshold
 		if (dy < threshold) {
 			filt_m.push_back(cur);
@@ -455,7 +464,7 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 
 	// print header`
 	file << "Distance, Trained X, Trained Y, Trained angle, Trained Response, Querry X, Querry Y, Querry angle, Querry Response, Ground Truth" << endl;
-	
+
 	// for each line, format a astring with data including a new line character
 	for (int i = 0; i < vdat.size(); i++) {
 		DMatch cur = vdat[i].match;
@@ -472,7 +481,7 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 	file.close();
 }
 
-void GetMatchData(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys, vector<DMatch> &matches, vector<matchData> &tmatches) 
+void GetMatchData(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys, vector<DMatch> &matches, vector<matchData> &tmatches)
 {
 	// iterate over all matches, basically creating "tagged" matches with the @matchData struct
 	for (vector<DMatch>::iterator it = matches.begin(); it != matches.end(); it++) {
@@ -481,8 +490,8 @@ void GetMatchData(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> 
 		m.match = cur; // assign it
 		m.trainedPt = trainKeys[cur.trainIdx].pt; // store trained point, I use this as the match coordinates
 		m.gtruth = truth_img.at<uint8_t>(m.trainedPt); // store ground-truth at this point
-		m.dx = trainKeys[cur.trainIdx].pt.x - trainKeys[cur.trainIdx].pt.x; // calculate delta-x
-		m.dy = compKeys[cur.queryIdx].pt.y - compKeys[cur.queryIdx].pt.y; // calculate delta-y
+		m.dx = trainKeys[cur.trainIdx].pt.x - compKeys[cur.queryIdx].pt.x; // calculate delta-x
+		m.dy = trainKeys[cur.trainIdx].pt.y - compKeys[cur.queryIdx].pt.y; // calculate delta-y
 		tmatches.push_back(m); // push it back.
 	}
 }
