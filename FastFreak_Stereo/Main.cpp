@@ -213,9 +213,9 @@ void do_main() {
 	}*/
 
 	// Load image
-	Mat im0 = imread("cones2.png", IMREAD_GRAYSCALE);
-	Mat im1 = imread("cones6.png", IMREAD_GRAYSCALE);
-	Mat gt = imread("cones_disp2.png", IMREAD_GRAYSCALE);
+	Mat im0 = imread("../inputs/cones2.png", IMREAD_GRAYSCALE);
+	Mat im1 = imread("../inputs/cones6.png", IMREAD_GRAYSCALE);
+	Mat gt = imread("../inputs/cones_disp2.png", IMREAD_GRAYSCALE);
 
 	// Display incoming Image
 	window_disp(0, im0);
@@ -301,8 +301,8 @@ void do_main() {
 		<< "|Bad px |     " << MATLAB_SFT_BP << "    |   " << MATLAB_FFK_BP << endl << endl;
 
 	cout << "Saving match data for Matlab analysis." << endl;// << "Press any key to Continue... " << endl << endl;
-	print_matches("SiftMatches.csv", sift_mf, sift_key1, sift_key2, sft_truth);
-	print_matches("FastFreakMatches.csv", ffk_mf, ffk_key1, ffk_key2, ffk_truth);
+	print_matches("../outputs/SiftMatches.csv", sift_mf, sift_key1, sift_key2, sft_truth);
+	print_matches("../outputs/FastFreakMatches.csv", ffk_mf, ffk_key1, ffk_key2, ffk_truth);
 
 	//do_waitKey(DO_ALL_WAITKEYS);
 }
@@ -463,7 +463,7 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 	file.open(filename, ios::out);
 
 	// print header`
-	file << "Distance, Trained X, Trained Y, Trained angle, Trained Response, Querry X, Querry Y, Querry angle, Querry Response, Ground Truth" << endl;
+	file << "Distance, Trained X, Trained Y, Trained angle, Trained Response, Querry X, Querry Y, Querry angle, Querry Response, dx, dy, Ground Truth" << endl;
 
 	// for each line, format a astring with data including a new line character
 	for (int i = 0; i < vdat.size(); i++) {
@@ -474,7 +474,8 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 		// reference:		 dist , tx  , ty  , ta  , tr  , qx  , qy  , qa  , qr  , dx  , dy  ,truth
 		string lineformat = "%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f\n";
 		char buf[300];
-		snprintf(buf, 300, lineformat.c_str(), cur.distance, tKey.pt.x, tKey.pt.y, tKey.angle, tKey.response, qKey.pt.x, qKey.pt.y, qKey.angle, qKey.response, gtruth);
+		snprintf(buf, 300, lineformat.c_str(), cur.distance, tKey.pt.x, tKey.pt.y, tKey.angle, 
+			tKey.response, qKey.pt.x, qKey.pt.y, qKey.angle, qKey.response, vdat[i].dx, vdat[i].dy, gtruth);
 		file << buf;
 	}
 
