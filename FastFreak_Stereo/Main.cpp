@@ -13,12 +13,17 @@
 #include "opencv2\xfeatures2d.hpp"
 #include "opencv2\imgproc.hpp";
 
+#define DISPARITY_MAX 300
+#define SIFT_SCALEFACTOR 3.94
+#define FFK_SCALEFACTOR 3.74
+#define DISPARITY_ERR_THRSH 5
+
 using namespace cv;
 using namespace std;
 using namespace cv::xfeatures2d;
 
 typedef struct {
-	DMatch match; Point2d trainedPt; int gtruth;
+	DMatch match; Point2d trainedPt; int gtruth; float dy, dx;
 } matchData;
 
 /// helper functions
@@ -29,7 +34,9 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 void window_disp(int window, Mat image);
 void filter_dy(vector<DMatch> &matches, vector<DMatch> &filt_m, vector<KeyPoint> &keypoints1, vector<KeyPoint> &keypoints2, float threshold);
 void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> trainKeys, vector<KeyPoint> querKeys, vector<matchData> vdat);
-void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<DMatch> &matches, vector<matchData> &tmatches);
+void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys,vector<DMatch> &matches, vector<matchData> &tmatches);
+float MiddleburyRMS(vector<matchData> &tmatches);
+float MiddleburyBadPixels(vector<matchData> &tmatches);
 
 bool DO_ALL_WAITKEYS = false;
 void do_waitKey(bool should_wait) {
@@ -113,7 +120,7 @@ void do_main() {
 
 	// do vertical rejection first because brute force will match on both axes
 	vector<DMatch> sift_mf;
-	filter_dy(sift_m, sift_mf, sift_key1, sift_key2, 5);
+	filter_dy(sift_m, sift_mf, sift_key1, sift_key2, 0.5);
 
 	// now detect FAST-FREAK matches
 	vector<DMatch> ffk_m;
@@ -123,7 +130,7 @@ void do_main() {
 
 	// do vertical rejection for FAST-FREAK
 	vector<DMatch> ffk_mf;
-	filter_dy(ffk_m, ffk_mf, ffk_key1, ffk_key2, 5);
+	filter_dy(ffk_m, ffk_mf, ffk_key1, ffk_key2, 0.5);
 
 	// create a disparity map for each, where no match for a point=0
 	// also returns a vector<DMatch> of filtered points with best match
@@ -144,8 +151,8 @@ void do_main() {
 
 	// compare each match to the ground-truth at each related point
 	vector<matchData> sft_truth, ffk_truth;
-	GetTruthMatches(gt, sift_key1, sift_mf2, sft_truth);
-	GetTruthMatches(gt, ffk_key1, ffk_mf2, ffk_truth);
+	GetTruthMatches(gt, sift_key1, sift_key2, sift_mf2, sft_truth);
+	GetTruthMatches(gt, ffk_key1, ffk_key2, ffk_mf2, ffk_truth);
 
 
 	cout << "Saving match data for Matlab analysis." << endl;// << "Press any key to Continue... " << endl << endl;
@@ -243,6 +250,8 @@ void ComputeAndFilterDesparityMap(Mat &im0, Mat &im1, vector<DMatch> &matches, v
 		KeyPoint mk = keypoints2[cur.queryIdx]; // querry kp
 		float disp = abs(mk.pt.x-tk.pt.x);
 
+		if (disp > DISPARITY_MAX) continue;
+
 		// if this is the first match here or if there is a match with a shorter distance
 		if ((desp.at<float>(tk.pt) < 0)) {
 			desp.at<float>(tk.pt) = disp;
@@ -297,8 +306,8 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 		float gtruth = vdat[i].gtruth;
 		KeyPoint tKey = trainKeys[cur.trainIdx];
 		KeyPoint qKey = querKeys[cur.queryIdx];
-		// reference:		 dist , tx  , ty  , ta  , tr  , qx  , qy  , qa  , qr  , truth
-		string lineformat = "%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f\n";
+		// reference:		 dist , tx  , ty  , ta  , tr  , qx  , qy  , qa  , qr  , dx  , dy  ,truth
+		string lineformat = "%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f,%1.6f\n";
 		char buf[300];
 		snprintf(buf, 300, lineformat.c_str(), cur.distance, tKey.pt.x, tKey.pt.y, tKey.angle, tKey.response, qKey.pt.x, qKey.pt.y, qKey.angle, qKey.response,gtruth);
 		file << buf;
@@ -307,7 +316,7 @@ void print_matches(string filename, vector<DMatch> matches, vector<KeyPoint> tra
 	file.close();
 }
 
-void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<DMatch> &matches, vector<matchData> &tmatches) {
+void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<KeyPoint> &compKeys, vector<DMatch> &matches, vector<matchData> &tmatches) {
 
 	for (vector<DMatch>::iterator it = matches.begin(); it != matches.end(); it++) {
 		matchData m;
@@ -315,11 +324,36 @@ void GetTruthMatches(Mat &truth_img, vector<KeyPoint> &trainKeys, vector<DMatch>
 		m.match = cur;
 		m.trainedPt = trainKeys[cur.trainIdx].pt;
 		m.gtruth = truth_img.at<uint8_t>(m.trainedPt);
+		m.dx = trainKeys[cur.trainIdx].pt.x - trainKeys[cur.trainIdx].pt.x;
+		m.dy = compKeys[cur.queryIdx].pt.y - compKeys[cur.queryIdx].pt.y;
 		tmatches.push_back(m);
 	}
 }
 
+float MiddleburyRMS(vector<matchData> &tmatches)
+{
+	double RMS = 0;
+	for (int i = 0; i < tmatches.size(); i++) {
+		matchData cur = tmatches[i];
+		float delta = abs(cur.dx) - cur.gtruth;
+		float sq = pow(delta, 2);
+		RMS += sq;
+	}
+	RMS = RMS / tmatches.size();
+	RMS = pow(RMS, 0.5);
+}
 
+float MiddleburyBadPixels(vector<matchData> &tmatches) 
+{
+	double B = 0;
+	for (int i = 0; i < tmatches.size(); i++) {
+		matchData cur = tmatches[i];
+		float delta = abs(cur.dx) - cur.gtruth;
+		if (delta > DISPARITY_ERR_THRSH)
+			B += 1.0;
+	}
+	B = B / tmatches.size();
+}
 
 
 

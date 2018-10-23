@@ -50,8 +50,35 @@ plot(sfm.GroundTruth); hold on; plot(abs(sfm.QuerryX-sfm.TrainedX))
 % calculate dx from sift
 sdx = abs(sfm.QuerryX - sfm.TrainedX);
 plot(sdx); hold on; plot(sfm.GroundTruth);
-[x,RMS] = fminsearch(@(s)MiddleburyRMS(abs(sfm.QuerryX-sfm.TrainedX)*s,sfm.GroundTruth),1)
 
 figure
-plot(x*abs(sfm.QuerryX-sfm.TrainedX)); hold on; plot(sfm.GroundTruth);hold off;
+plot(abs(sfm.QuerryX-sfm.TrainedX)); hold on; plot(sfm.GroundTruth);hold off;
+title('Raw SIFT Disparity Per Match Index')
+figure
+plot(abs(ffm.QuerryX-ffm.TrainedX)); hold on; plot(ffm.GroundTruth);hold off;
+title('Raw FAST-FREAK Disparity Per Match Index')
+
+% SIFT_RMS = MiddleburyRMS(abs(sfm.QuerryX-sfm.TrainedX),sfm.GroundTruth)
+
+[sift_fit,sift_RMS] = fminsearch(@(s)MiddleburyRMS(abs(sfm.QuerryX-sfm.TrainedX)*s,sfm.GroundTruth),1)
+
+[ffm_fit,ffm_RMS] = fminsearch(@(s)MiddleburyRMS(abs(ffm.QuerryX-ffm.TrainedX)*s,ffm.GroundTruth),1)
+
+figure
+plot(abs(sfm.QuerryX-sfm.TrainedX)*sift_fit); hold on; plot(sfm.GroundTruth);hold off;
+title('Scaled SIFT Disparity Per Match Index')
+figure
+plot(abs(ffm.QuerryX-ffm.TrainedX)*ffm_fit); hold on; plot(ffm.GroundTruth);hold off;
+title('Scaled FAST-FREAK Disparity Per Match Index')
+
+sift_BADP = MiddleburyBadPixels(abs(sfm.QuerryX-sfm.TrainedX)*sift_fit,sfm.GroundTruth,40)
+ffm_BADP = MiddleburyBadPixels(abs(ffm.QuerryX-ffm.TrainedX)*ffm_fit,ffm.GroundTruth,40)
+
+d = zeros(1,100);
+for i=100:-1:1
     
+    d(i) = MiddleburyBadPixels(abs(sfm.QuerryX-sfm.TrainedX)*sift_fit,sfm.GroundTruth,i)
+end
+
+plot(d);
+title('Percent Bad Pixels vs. Disparity Error Threshold');
